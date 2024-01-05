@@ -100,6 +100,9 @@ in
     "d /pool/container-data/adguard/config 0755 root root -"
     "d /pool/container-data/adguard/tailscale 0755 root root -"
 
+    "d /pool/container-data/changedetection-io/config 0755 root root -"
+    "d /pool/container-data/changedetection-io/tailscale 0755 root root -"
+
     "d /pool/container-data/syncthing/config 0755 root root -"
     "d /pool/container-data/syncthing/data 0755 root root -"
     "d /pool/container-data/syncthing/tailscale 0755 root root -"
@@ -209,7 +212,7 @@ in
     ];
     config = _: {
       imports = [
-        ./vaultwarden.env.nix
+        ./vaultwarden.enc.nix
       ];
       services.vaultwarden.enable = true;
       services.vaultwarden.package = pkgs.unstable.vaultwarden;
@@ -252,6 +255,52 @@ in
       systemd.tmpfiles.rules = [
         "d /var/lib/AdGuardHome 0755 adguardhome adguardhome -"
       ];
+    };
+  };
+
+  containers.changedetection = mkContainer {
+    bindMounts = mkBinds [
+      "/var/lib/tailscale:/pool/container-data/changedetection-io/tailscale"
+      "/datastore:/pool/container-data/changedetection-io/config"
+    ];
+    extraFlags = [
+      "--system-call-filter=keyctl"
+      "--system-call-filter=bpf"
+    ];
+    additionalCapabilities = [ "all" ];
+    config = _: {
+      virtualisation.docker.enable = true;
+      virtualisation.oci-containers.backend = "docker";
+      virtualisation.oci-containers.containers = {
+        changedetection-io-playwright = {
+          image = "browserless/chrome";
+          environment = {
+            SCREEN_WIDTH = "1920";
+            SCREEN_HEIGHT = "1024";
+            SCREEN_DEPTH = "16";
+            ENABLE_DEBUGGER = "false";
+            PREBOOT_CHROME = "true";
+            CONNECTION_TIMEOUT = "300000";
+            MAX_CONCURRENT_SESSIONS = "10";
+            CHROME_REFRESH_TIME = "600000";
+            DEFAULT_BLOCK_ADS = "true";
+            DEFAULT_STEALTH = "true";
+          };
+          ports = [
+            "127.0.0.1:3000:3000"
+          ];
+          extraOptions = [ "--network=bridge" ];
+        };
+        changedetection = {
+          image = "dgtlmoon/changedetection.io";
+          environment = {
+            PLAYWRIGHT_DRIVER_URL = "ws://127.0.0.1:3000/?stealth=1&--disable-web-security=true";
+          };
+          extraOptions = [ "--network=bridge" ];
+          autoStart = true;
+          ports = [ "127.0.0.1:5000:5000" ];
+        };
+      };
     };
   };
 
